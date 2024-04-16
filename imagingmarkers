@@ -1,0 +1,73 @@
+setwd("D:/brain_health/analysis_a")
+library(data.table)
+library(dplyr)
+library(glmnet)
+library(foreign)
+library(fdrtool)
+exposures<-fread("exposures.csv",header = T,stringsAsFactors = F)
+outcome<-fread("outcome.csv",header = T,stringsAsFactors = F)
+analysis_file<-merge(exposures,outcome, by = "eid)
+####linear regression models
+eachexposure <- c()
+for (i in 2:j){
+  fit <- lm(y~analysis_file[,i]+age+sex, data=analysis_file)
+  eachexposure<- rbind(eachexposure, 
+                    c(colnames(analysis_file)[i], coef(summary(fit))[2,c(1,2,4)]))}
+###FDR_adjust
+exposure_single <- as.data.frame(eachexposure)
+exposure_single$`Pr(>|t|)` <- as.numeric(base_single$`Pr(>|t|)`)
+fdr <- fdrtool(exposure_single$`Pr(>|t|)`,statistic = "pvalue")
+base_single$p_adjust <- fdr$qval
+
+fm1<-paste0("eid,", paste0(exposure_single$V1[exposure_single$p_adjust<0.05],collapse = ","))
+exposures_use<- select(analysis_file,c(fm1))
+analysis_lasso<- merge(exposures_use,outcome, by = "eid")
+
+#####lasso regression
+analysis_lasso<-as.data.frame(analysis_lasso)
+y<-as.matrix(analysis_lasso[,z])
+x<-as.matrix(analysis_lasso[,c(2:j)])
+f1 = glmnet(data.matrix(x), y, family="gaussian", nlambda=100,alpha=1)
+print(f1)
+plot(f1, xvar="lambda", labe=TRUE)
+cvfit=cv.glmnet(data.matrix(x),y)
+plot(cvfit)
+cvfit$lambda.min
+cvfit$lambda.1se
+l.coef2<-coef(cvfit$glmnet.fit,s=lambda.min,exact = F)
+l.coef1<-coef(cvfit$glmnet.fit,s=lambda.1se,exact = F)
+a <- as.matrix(l.coef1/l.coef2)
+a <- as.data.frame(a)
+a$variable <- rownames(a)
+a <- a[-1,]
+b <- a$variable[!a$s1=="0"]
+c <- paste0(b,collapse = "+")
+formula <- as.formula(paste0("y","~","age","+sex+",c))
+modelA<-lm(formula,data = analysis_lasso)
+summary(modelA)
+lasso_results<- as.data.frame(summary(modelA)[["coefficients"]])
+write.csv(lasso_results,file="lasso_results.csv")
+
+#####RCS
+setwd("D:/brain_health/RCS")
+library(data.table)
+analysis<-fread("analysis.csv",header = T,stringsAsFactors = F)
+data<- as.data.frame(analysis)
+dd<-datadist(data) 
+options(datadist='dd')
+library(data.table)
+rcsmodel <- ols(y ~ rcs(outdoors,5) + age + sex, x=TRUE, y=TRUE,data=data)
+an<- anova(rcsmodel)
+plot(Predict(rcsmodel, x,fun=exp), anova=an, pval=T)
+OR<-Predict(rcsmodel, x,fun=exp,ref.zero = TRUE)
+ggplot()+geom_line(data=OR, aes(x,yhat),linetype=1,linewidth=1,alpha = 0.9,colour="red")+
+  geom_ribbon(data=OR, aes(x,ymin = lower, ymax = upper),alpha = 0.3,fill="#ECA8A9")+
+  geom_hline(yintercept=1, linetype=2,linewidth=1)+theme_classic()+
+  labs(title = "RCS", x="x", y="OR (95%CI)")
+
+#####weighted score
+setwd("D:/brain_health/score")
+library(data.table)
+analysis_score<-fread("score.csv",header = T,stringsAsFactors = F)
+modelB<-lm(y~score+age+sex,data = analysis_score)
+summary(modelB)
